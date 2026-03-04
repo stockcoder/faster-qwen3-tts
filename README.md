@@ -119,7 +119,8 @@ Features: voice clone (upload any WAV or use your microphone), voice design (1.7
 ```bash
 pip install "faster-qwen3-tts[demo]"
 python examples/openai_server.py \
-    --ref-audio voice.wav --ref-text "transcript" \
+    --ref-audio ref_audio.wav \
+    --ref-text "I'm confused why some people have super short timelines, yet at the same time are bullish on scaling up reinforcement learning atop LLMs. If we're actually close to a human-like learner, then this whole approach of training on verifiable outcomes is doomed." \
     --language English --port 8000
 ```
 
