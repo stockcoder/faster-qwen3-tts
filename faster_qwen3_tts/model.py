@@ -468,6 +468,7 @@ class FasterQwen3TTS:
         language: str,
         speaker: Optional[str],
         instruct: Optional[str] = None,
+        voice_clone_prompt: Optional[Dict[str, Any]] = None,
     ):
         input_texts = [self.model._build_assistant_text(text)]
         input_ids = self.model._tokenize_texts(input_texts)
@@ -479,16 +480,32 @@ class FasterQwen3TTS:
             instruct_ids.append(self.model._tokenize_texts([self.model._build_instruct_text(instruct)])[0])
 
         m = self.model.model
-        tie, tam, tth, tpe = self._build_talker_inputs_local(
-            m=m,
-            input_ids=input_ids,
-            ref_ids=[None],
-            voice_clone_prompt=None,
-            languages=[language] if language is not None else ["Auto"],
-            speakers=[speaker],
-            non_streaming_mode=False,
-            instruct_ids=instruct_ids,
-        )
+
+        # When voice_clone_prompt is provided (x_vector mode), use it instead of
+        # the built-in speaker lookup. This enables pre-extracted speaker embeddings
+        # to go through the fast CUDA-graphed pipeline.
+        if voice_clone_prompt is not None:
+            tie, tam, tth, tpe = self._build_talker_inputs_local(
+                m=m,
+                input_ids=input_ids,
+                ref_ids=[None],
+                voice_clone_prompt=voice_clone_prompt,
+                languages=[language] if language is not None else ["Auto"],
+                speakers=[None],
+                non_streaming_mode=False,
+                instruct_ids=instruct_ids,
+            )
+        else:
+            tie, tam, tth, tpe = self._build_talker_inputs_local(
+                m=m,
+                input_ids=input_ids,
+                ref_ids=[None],
+                voice_clone_prompt=None,
+                languages=[language] if language is not None else ["Auto"],
+                speakers=[speaker],
+                non_streaming_mode=False,
+                instruct_ids=instruct_ids,
+            )
 
         if not self._warmed_up:
             self._warmup(tie.shape[1])
@@ -1029,12 +1046,15 @@ class FasterQwen3TTS:
         top_p: float = 1.0,
         do_sample: bool = True,
         repetition_penalty: float = 1.05,
+        voice_clone_prompt: Optional[Dict[str, Any]] = None,
     ) -> Tuple[list, int]:
         if self.model.model.tts_model_type != "custom_voice":
             raise ValueError("Loaded model does not support custom voice generation")
 
         self.model._validate_languages([language])
-        self.model._validate_speakers([speaker])
+        # Skip speaker validation when using voice_clone_prompt (x_vector mode)
+        if voice_clone_prompt is None:
+            self.model._validate_speakers([speaker])
 
         if self.model.model.tts_model_size in "0b6":
             instruct = None
@@ -1046,6 +1066,7 @@ class FasterQwen3TTS:
             language=language,
             speaker=speaker,
             instruct=instruct,
+            voice_clone_prompt=voice_clone_prompt,
         )
 
         codec_ids, timing = fast_generate(
